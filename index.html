@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>QR Scanner</title>
+        <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🔎</text></svg>' />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <style>
+            :root {
+                --ink: #12181a;
+                --ink-soft: #1b2326;
+                --paper: #f6f3ec;
+                --amber: #ffb238;
+                --amber-dim: #8a6321;
+                --teal: #1f4b4c;
+                --green: #4caf6d;
+                --red: #e2604f;
+                --muted: #8a9296;
+                --line: #2a3336;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                background: var(--ink);
+                color: var(--paper);
+                font-family: "Inter", sans-serif;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+            }
+            .card {
+                width: 100%;
+                max-width: 420px;
+            }
+            .eyebrow {
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 12px;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                color: var(--amber);
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 6px;
+            }
+            .eyebrow .dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: var(--muted);
+                display: inline-block;
+            }
+            .eyebrow .dot.live {
+                background: var(--green);
+                box-shadow: 0 0 0 0 rgba(76, 175, 109, 0.6);
+                animation: pulseDot 1.8s infinite;
+            }
+            @keyframes pulseDot {
+                0% {
+                    box-shadow: 0 0 0 0 rgba(76, 175, 109, 0.55);
+                }
+                70% {
+                    box-shadow: 0 0 0 8px rgba(76, 175, 109, 0);
+                }
+                100% {
+                    box-shadow: 0 0 0 0 rgba(76, 175, 109, 0);
+                }
+            }
+            h1 {
+                font-family: "Space Grotesk", sans-serif;
+                font-size: 26px;
+                font-weight: 700;
+                margin: 0 0 6px;
+                letter-spacing: -0.01em;
+            }
+            p.sub {
+                margin: 0 0 20px;
+                color: var(--muted);
+                font-size: 14px;
+                line-height: 1.5;
+            }
+            .viewfinder {
+                position: relative;
+                width: 100%;
+                aspect-ratio: 1/1;
+                background: #000;
+                border-radius: 18px;
+                overflow: hidden;
+                border: 1px solid var(--line);
+            }
+            video {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+            canvas {
+                display: none;
+            }
+            .frame {
+                position: absolute;
+                inset: 14%;
+                pointer-events: none;
+            }
+            .corner {
+                position: absolute;
+                width: 26px;
+                height: 26px;
+                border: 3px solid var(--amber);
+            }
+            .corner.tl {
+                top: 0;
+                left: 0;
+                border-right: none;
+                border-bottom: none;
+                border-top-left-radius: 6px;
+            }
+            .corner.tr {
+                top: 0;
+                right: 0;
+                border-left: none;
+                border-bottom: none;
+                border-top-right-radius: 6px;
+            }
+            .corner.bl {
+                bottom: 0;
+                left: 0;
+                border-right: none;
+                border-top: none;
+                border-bottom-left-radius: 6px;
+            }
+            .corner.br {
+                bottom: 0;
+                right: 0;
+                border-left: none;
+                border-top: none;
+                border-bottom-right-radius: 6px;
+            }
+            .scanline {
+                position: absolute;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: linear-gradient(90deg, transparent, var(--amber) 20%, var(--amber) 80%, transparent);
+                box-shadow: 0 0 8px 1px rgba(255, 178, 56, 0.7);
+                animation: sweep 2.2s ease-in-out infinite;
+            }
+            @keyframes sweep {
+                0% {
+                    top: 6%;
+                }
+                50% {
+                    top: 94%;
+                }
+                100% {
+                    top: 6%;
+                }
+            }
+            .frame.found .corner {
+                border-color: var(--green);
+            }
+            .frame.found .scanline {
+                display: none;
+            }
+            .state-msg {
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                padding: 10px 14px 12px;
+                text-align: center;
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 12px;
+                color: var(--paper);
+                background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent);
+            }
+            .actions {
+                display: flex;
+                gap: 10px;
+                margin-top: 16px;
+            }
+            button {
+                font-family: "Inter", sans-serif;
+                font-weight: 600;
+                font-size: 14px;
+                border-radius: 10px;
+                border: 1px solid var(--line);
+                padding: 12px 14px;
+                cursor: pointer;
+                background: var(--ink-soft);
+                color: var(--paper);
+                flex: 1;
+                transition:
+                    border-color 0.15s ease,
+                    transform 0.1s ease;
+            }
+            button:hover {
+                border-color: var(--amber);
+            }
+            button:active {
+                transform: scale(0.98);
+            }
+            button.primary {
+                background: var(--amber);
+                color: var(--ink);
+                border-color: var(--amber);
+            }
+            button.primary:hover {
+                filter: brightness(1.06);
+            }
+            #fileInput {
+                display: none;
+            }
+            .result {
+                margin-top: 18px;
+                background: var(--ink-soft);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                padding: 16px;
+                display: none;
+            }
+            .result.show {
+                display: block;
+                animation: riseIn 0.25s ease;
+            }
+            @keyframes riseIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(6px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            .result .label {
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 11px;
+                letter-spacing: 0.1em;
+                text-transform: uppercase;
+                color: var(--green);
+                margin-bottom: 8px;
+            }
+            .result .value {
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 14px;
+                line-height: 1.5;
+                word-break: break-all;
+                color: var(--paper);
+                margin-bottom: 14px;
+            }
+            .result .row {
+                display: flex;
+                gap: 10px;
+            }
+            .error-box {
+                margin-top: 14px;
+                padding: 12px 14px;
+                border-radius: 10px;
+                background: rgba(226, 96, 79, 0.1);
+                border: 1px solid rgba(226, 96, 79, 0.4);
+                color: #f4b3a9;
+                font-size: 13px;
+                line-height: 1.5;
+                display: none;
+            }
+            .error-box.show {
+                display: block;
+            }
+            footer {
+                margin-top: 22px;
+                text-align: center;
+                color: var(--muted);
+                font-size: 12px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="eyebrow"><span class="dot" id="statusDot"></span><span id="statusText">Starting camera</span></div>
+            <h1>Scan the QR code</h1>
+            <p class="sub">No app needed. Point your camera at the code and hold steady — it reads automatically.</p>
+
+            <div class="viewfinder">
+                <video id="video" playsinline muted></video>
+                <canvas id="canvas"></canvas>
+                <div class="frame" id="frame">
+                    <div class="corner tl"></div>
+                    <div class="corner tr"></div>
+                    <div class="corner bl"></div>
+                    <div class="corner br"></div>
+                    <div class="scanline"></div>
+                </div>
+                <div class="state-msg" id="stateMsg">Looking for a code…</div>
+            </div>
+
+            <div class="actions">
+                <button id="uploadBtn">Upload image instead</button>
+                <button id="switchBtn">Switch camera</button>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" />
+
+            <div class="result" id="result">
+                <div class="label">Code found</div>
+                <div class="value" id="resultValue"></div>
+                <div class="row">
+                    <button class="primary" id="openBtn">Open link</button>
+                    <button id="copyBtn">Copy</button>
+                    <button id="againBtn">Scan again</button>
+                </div>
+            </div>
+
+            <div class="error-box" id="errorBox"></div>
+
+            <footer>Works best in good light, held about 15–20 cm from the code.</footer>
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+        <script>
+            (function () {
+                const video = document.getElementById("video");
+                const canvas = document.getElementById("canvas");
+                const ctx = canvas.getContext("2d", { willReadFrequently: true });
+                const frame = document.getElementById("frame");
+                const stateMsg = document.getElementById("stateMsg");
+                const statusDot = document.getElementById("statusDot");
+                const statusText = document.getElementById("statusText");
+                const result = document.getElementById("result");
+                const resultValue = document.getElementById("resultValue");
+                const openBtn = document.getElementById("openBtn");
+                const copyBtn = document.getElementById("copyBtn");
+                const againBtn = document.getElementById("againBtn");
+                const uploadBtn = document.getElementById("uploadBtn");
+                const switchBtn = document.getElementById("switchBtn");
+                const fileInput = document.getElementById("fileInput");
+                const errorBox = document.getElementById("errorBox");
+
+                let stream = null;
+                let scanning = false;
+                let rafId = null;
+                let facingMode = "environment";
+
+                function showError(msg) {
+                    errorBox.textContent = msg;
+                    errorBox.classList.add("show");
+                    statusText.textContent = "Camera unavailable";
+                    statusDot.classList.remove("live");
+                }
+
+                function hideError() {
+                    errorBox.classList.remove("show");
+                }
+
+                async function startCamera() {
+                    hideError();
+                    stopCamera();
+                    statusText.textContent = "Starting camera";
+                    statusDot.classList.remove("live");
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: { ideal: facingMode }, width: { ideal: 720 }, height: { ideal: 720 } },
+                            audio: false,
+                        });
+                        video.srcObject = stream;
+                        await video.play();
+                        statusText.textContent = "Camera live";
+                        statusDot.classList.add("live");
+                        scanning = true;
+                        tick();
+                    } catch (err) {
+                        if (!window.isSecureContext) {
+                            showError('Camera access needs a secure (https) page. Try the "Upload image instead" option below.');
+                        } else if (err && err.name === "NotAllowedError") {
+                            showError("Camera permission was denied. Allow camera access in your browser settings, or upload an image of the code instead.");
+                        } else if (err && err.name === "NotFoundError") {
+                            showError('No camera was found on this device. Use "Upload image instead" to scan from a photo.');
+                        } else {
+                            showError('Could not start the camera. Use "Upload image instead" to scan from a photo.');
+                        }
+                    }
+                }
+
+                function stopCamera() {
+                    scanning = false;
+                    if (rafId) cancelAnimationFrame(rafId);
+                    if (stream) {
+                        stream.getTracks().forEach((t) => t.stop());
+                        stream = null;
+                    }
+                }
+
+                function tick() {
+                    if (!scanning) return;
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+                        if (code && code.data) {
+                            onDecoded(code.data);
+                            return;
+                        }
+                    }
+                    rafId = requestAnimationFrame(tick);
+                }
+
+                function onDecoded(data) {
+                    scanning = false;
+                    frame.classList.add("found");
+                    stateMsg.textContent = "Code captured";
+                    if (navigator.vibrate) navigator.vibrate(120);
+                    resultValue.textContent = data;
+                    result.classList.add("show");
+                    const isUrl = /^https?:\/\//i.test(data.trim());
+                    openBtn.style.display = isUrl ? "block" : "none";
+                    stopCamera();
+                }
+
+                openBtn.addEventListener("click", () => {
+                    window.open(resultValue.textContent, "_blank", "noopener");
+                });
+
+                copyBtn.addEventListener("click", async () => {
+                    try {
+                        await navigator.clipboard.writeText(resultValue.textContent);
+                        copyBtn.textContent = "Copied";
+                        setTimeout(() => (copyBtn.textContent = "Copy"), 1400);
+                    } catch (e) {
+                        const ta = document.createElement("textarea");
+                        ta.value = resultValue.textContent;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand("copy");
+                        document.body.removeChild(ta);
+                        copyBtn.textContent = "Copied";
+                        setTimeout(() => (copyBtn.textContent = "Copy"), 1400);
+                    }
+                });
+
+                againBtn.addEventListener("click", () => {
+                    result.classList.remove("show");
+                    frame.classList.remove("found");
+                    stateMsg.textContent = "Looking for a code…";
+                    startCamera();
+                });
+
+                switchBtn.addEventListener("click", () => {
+                    facingMode = facingMode === "environment" ? "user" : "environment";
+                    startCamera();
+                });
+
+                uploadBtn.addEventListener("click", () => fileInput.click());
+
+                fileInput.addEventListener("change", (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const img = new Image();
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        img.src = ev.target.result;
+                    };
+                    img.onload = () => {
+                        const c = document.createElement("canvas");
+                        c.width = img.width;
+                        c.height = img.height;
+                        const cctx = c.getContext("2d");
+                        cctx.drawImage(img, 0, 0);
+                        const imageData = cctx.getImageData(0, 0, c.width, c.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+                        if (code && code.data) {
+                            stopCamera();
+                            onDecoded(code.data);
+                        } else {
+                            showError("No QR code was found in that image. Try a clearer, closer photo of the code.");
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                });
+
+                window.addEventListener("beforeunload", stopCamera);
+
+                startCamera();
+            })();
+        </script>
+        <script>
+            if ("serviceWorker" in navigator) {
+                window.addEventListener("load", () => {
+                    navigator.serviceWorker.register("sw.js").catch((err) => {
+                        console.error("SW registration failed:", err);
+                    });
+                });
+
+                // Auto-refresh once when a new SW version takes control.
+                let refreshing = false;
+                navigator.serviceWorker.addEventListener("controllerchange", () => {
+                    if (refreshing) return;
+                    refreshing = true;
+                    window.location.reload();
+                });
+            }
+        </script>
+    </body>
+</html>
